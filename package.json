@@ -1,0 +1,15 @@
+{
+  "name": "youtube-fullstack",
+  "version": "1.0.0",
+  "description": "full Stack YouTube app",
+  "main": "index.js",
+  "types": "module",
+  "scripts": {
+    "start" : "node index.js"
+  },
+  "keywords": [
+    "youtube"
+  ],
+  "author": "Sonu",
+  "license": "ISC"
+}
