@@ -4,6 +4,25 @@ import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/apiResponse.js";
 
+//we are making seperate function for generate access token and refresh token because we are using those generateToken method so many times which are defined in user model file 
+const generateAccessAndRefreshTokens = async (userId) => {
+     try {
+       const user =  await User.findById({ userId })
+       const accessToken =  user.generateAccessToken()
+       const refreshToken =   user.generateRefreshToken()
+
+       user.refreshToken = refreshToken
+    //    now at this point i have set the refreshToken to user doc and it is time to save the doc in mongodb  that is why we are using save() method, if we only use save method then mongodb validate all the fields which i dont want so i have pass argument to save method that save ({validateBeforeSave: false})
+          await user.save({validateBeforeSave: false})
+
+          return {accessToken , refreshToken}
+     } catch (error) {
+        throw new ApiError(500 , "Someting went wrong while generating refresh and access token")
+     }
+}
+
+
+
 // Controller to handle user registration
 const registerUser = asyncHandler(async (req, res) => {
 
@@ -44,8 +63,14 @@ const registerUser = asyncHandler(async (req, res) => {
     console.log(req.files); // Log files to debug or confirm uploads
 
     const avatarLocalPath = req.files?.avatar?.[0]?.path;
-    const coverImageLocalPath = req.files?.coverImage?.[0]?.path;
+    // const coverImageLocalPath = req.files?.coverImage?.[0]?.path;
+    
+    let coverImageLocalPath;
+    if (req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length > 0) {
+        coverImageLocalPath = req.files.coverImage[0].path
+    }
 
+    console.log(avatarLocalPath , "yaha tk code chl rha hai")
     if (!avatarLocalPath) {
         throw new ApiError(400, "Avatar file is required");
     }
@@ -53,6 +78,9 @@ const registerUser = asyncHandler(async (req, res) => {
     // Step 5: Upload avatar and cover image to Cloudinary and get URLs
     const avatar = await uploadOnCloudinary(avatarLocalPath);
     const coverImage = await uploadOnCloudinary(coverImageLocalPath); // coverImage can be optional
+    
+
+    console.log(avatar )
 
     if (!avatar) {
         throw new ApiError(400, "Failed to upload avatar to cloud");
@@ -93,6 +121,92 @@ const registerUser = asyncHandler(async (req, res) => {
 
 });
 
+
+const loginUser = asyncHandler( async (req, res) => {    
+        // 1. Get email/username and password from req.body
+        // 2. Check if user exists in DB with this email/username
+        // 3. Compare the entered password with hashed password (bcrypt)
+        // 4. If valid, generate access token (short expiry) and refresh token (long expiry)
+        // 5. Store refresh token in HttpOnly cookie
+        // 6. Optionally, set access token in cookie or return in response body
+        // 7. Redirect or respond with success and user info
+  
+        const {email, username , password} = req.body;
+        if(!username || !email){
+            throw new ApiError(400 , "username or email is required")
+        }
+
+       const user = await User.findOne({
+            $or: [{username} ,{email}]
+        })
+
+        if(!user) {
+            throw new ApiError(404 , "user does not exit")
+        }
+
+        const isPasswordValid =  await user.isPasswordCorrect(password)
+
+        if(!isPasswordValid){
+            throw new ApiError(401 , "Invalid user credendials")
+        }
+
+       const {accessToken , refreshToken} = await generateAccessAndRefreshTokens(user._id)
+
+
+       const loggedInUser = await User.findById(user._id).select("-password -refreshToken")
+
+       const options = {
+        httpOnly: true,
+        secure: true,
+       }
+
+       return res
+       .status(200)
+       .cookie("accessToken" , accessToken , options)
+       .cookie("refreshToken" , refreshToken , options)
+       .json(
+        new ApiResponse(
+            200,
+            {
+                user: loggedInUser , accessToken , refreshToken
+            },
+            "User logged In Successfully"
+        )
+       )
+
+} )
+
+const logoutUser = asyncHandler(async(req, res) => {
+   await User.findByIdAndUpdate(
+        req.user._id,
+        {
+            $set: {
+                refreshToken:undefined
+            }
+        },
+        {
+            new:true
+        }
+    )
+
+    const options = {
+        httpOnly:true,
+        secure:true,
+    }
+
+    return res
+    .status(200)
+    .clearCookie("accessToken" , options)
+    .clearCookie("refreshToken" , options)
+    .json(
+        new ApiResponse(200 , {} , "User logged Out Successfully")
+    )
+})
+
+
+
 export {
-    registerUser
+    registerUser,
+    loginUser,
+    logoutUser,
 };
