@@ -3,13 +3,16 @@ import { ApiError } from "../utils/apiError.js";
 import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/apiResponse.js";
+import JWT from "jsonwebtoken"
 
 //we are making seperate function for generate access token and refresh token because we are using those generateToken method so many times which are defined in user model file 
 const generateAccessAndRefreshTokens = async (userId) => {
+    // console.log(userId , "userId recieved in generateAccessAndRefreshToken function")
      try {
-       const user =  await User.findById({ userId })
+       const user =  await User.findById( userId )
        const accessToken =  user.generateAccessToken()
        const refreshToken =   user.generateRefreshToken()
+    //    console.log(user , accessToken , refreshToken)
 
        user.refreshToken = refreshToken
     //    now at this point i have set the refreshToken to user doc and it is time to save the doc in mongodb  that is why we are using save() method, if we only use save method then mongodb validate all the fields which i dont want so i have pass argument to save method that save ({validateBeforeSave: false})
@@ -17,6 +20,7 @@ const generateAccessAndRefreshTokens = async (userId) => {
 
           return {accessToken , refreshToken}
      } catch (error) {
+        console.log(error)
         throw new ApiError(500 , "Someting went wrong while generating refresh and access token")
      }
 }
@@ -131,8 +135,9 @@ const loginUser = asyncHandler( async (req, res) => {
         // 6. Optionally, set access token in cookie or return in response body
         // 7. Redirect or respond with success and user info
   
+        console.log(req.body)
         const {email, username , password} = req.body;
-        if(!username || !email){
+        if(!username && !email){
             throw new ApiError(400 , "username or email is required")
         }
 
@@ -203,10 +208,70 @@ const logoutUser = asyncHandler(async(req, res) => {
     )
 })
 
+const refreshAccessToken = asyncHandler(async (req, res) => {
+
+   try {
+     const incomingRefreshToken =
+         req.cookies?.refreshToken ||
+         req.header("Authorization")?.replace("Bearer ", "");
+ 
+     if (!incomingRefreshToken) {
+         throw new ApiError(400, "Refresh token is required");
+     }
+ 
+     // Verify the refresh token
+     let decodedToken;
+     try {
+         decodedToken = JWT.verify(incomingRefreshToken, process.env.REFRESH_TOKEN_SECRET);
+     } catch (err) {
+         throw new ApiError(401, "Invalid or expired refresh token");
+     }
+ 
+     const user = await User.findById(decodedToken?._id);
+ 
+     if (!user) {
+         throw new ApiError(401, "Invalid refresh token - user not found");
+     }
+ 
+     if (incomingRefreshToken !== user.refreshToken) {
+         throw new ApiError(401, "Invalid refresh token - token mismatch");
+     }
+ 
+     const { accessToken, refreshToken: newRefreshToken } = await generateAccessAndRefreshTokens(user._id);
+ 
+ 
+     const options = {
+         httpOnly: true,
+         secure: true,
+     }
+ 
+     return res
+         .status(200)
+         .cookie("refreshToken", newRefreshToken,options)
+         .cookie("accessToken", accessToken,options)
+         .json(
+             new ApiResponse(
+                 200,
+                 {
+                     accessToken,
+                     refreshToken: newRefreshToken,
+                 },
+                 "Successfully generated access token"
+             )
+         );
+   } catch (error) {
+    console.log("Error found while generating refreshAccessToken",error)
+      throw new ApiError(400 , "invalid refresh token")
+   }
+
+});
+
+
 
 
 export {
     registerUser,
     loginUser,
     logoutUser,
+    refreshAccessToken,
 };
