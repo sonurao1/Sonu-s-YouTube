@@ -1,7 +1,7 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/apiError.js";
 import { User } from "../models/user.model.js";
-import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import { uploadOnCloudinary , deleteFileFromCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/apiResponse.js";
 import JWT from "jsonwebtoken"
 
@@ -345,6 +345,8 @@ const updateUserAvatar = asyncHandler(async ( req,res ) => {
     throw new ApiError(400, "Error while uploading on avatar")
    }
 
+   const oldAvatar = await User.findById(req.user?._id).select("avatar")
+
    const user = await User.findByIdAndUpdate(
     req.user?.id,
     {
@@ -358,6 +360,18 @@ const updateUserAvatar = asyncHandler(async ( req,res ) => {
    if(!user){
     throw new ApiError(400 , "getting error while updating avatar")
    }
+
+   if (!oldAvatar || !oldAvatar.avatar) {
+    throw new ApiError(400, "No old avatar found");
+  }
+
+         // todo: delete old file from cloudinary
+         const parts = oldAvatar.avatar.split("/");
+         const fileNameWithExtension = parts[parts.length - 1]; // "mjbjnkmqukuzgvmhnqxl.png"
+         const publicId = fileNameWithExtension.split(".")[0]; // "mjbjnkmqukuzgvmhnqxl"
+
+    const deleteOldAvatar =  await deleteFileFromCloudinary(publicId)
+
 
    return res
    .status(200)
@@ -380,7 +394,11 @@ const updateUserCoverImage = asyncHandler(async ( req,res ) => {
     if(!coverImageCloudinaryPath.url){
      throw new ApiError(400, "Error while uploading on cover image")
     }
- 
+  
+    const oldCoverImage = await User.findById(req.user?._id).select("coverImage")
+
+
+
     const user = await User.findByIdAndUpdate(
      req.user?.id,
      {
@@ -394,6 +412,18 @@ const updateUserCoverImage = asyncHandler(async ( req,res ) => {
     if(!user){
      throw new ApiError(400 , "getting error while updating cover image")
     }
+
+    // todo: delete old file from cloudinary 
+    if (!oldCoverImage || !oldCoverImage.coverImage) {
+        throw new ApiError(400, "No old Cover image found");
+      }
+    
+             // todo: delete old file from cloudinary
+             const parts = oldCoverImage.coverImage.split("/");
+             const fileNameWithExtension = parts[parts.length - 1]; // "mjbjnkmqukuzgvmhnqxl.png"
+             const publicId = fileNameWithExtension.split(".")[0]; // "mjbjnkmqukuzgvmhnqxl"
+    
+        const deleteOldCoverImage =  await deleteFileFromCloudinary(publicId)
  
     return res
     .status(200)
